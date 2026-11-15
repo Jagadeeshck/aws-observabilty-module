@@ -1,0 +1,1 @@
+# Other service alert files follow this pattern. IAM has no universal service metric; S3 Tables, Athena, Glue, DataZone, OpenSearch, Route 53, SageMaker, ECS, EMR, DynamoDB, and AgentCore metrics require correct resource-specific dimensions and availability.
