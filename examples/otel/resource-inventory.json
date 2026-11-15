@@ -1,0 +1,21 @@
+[
+  {
+    "account_id": "111122223333",
+    "region": "eu-west-1",
+    "resource_id": "i-0123456789abcdef0",
+    "resource_type": "AWS::EC2::Instance",
+    "service_name": "data-platform-worker",
+    "service_namespace": "analytics",
+    "environment": "prod",
+    "availability_zone": "eu-west-1a",
+    "observability": {
+      "metrics_enabled": true,
+      "logs_enabled": true,
+      "tracing_enabled": false,
+      "detailed_monitoring_enabled": true
+    },
+    "source": "aws-config",
+    "tags": {"team": "data-platform", "environment": "prod"},
+    "otel_tag_allowlist": ["team"]
+  }
+]
