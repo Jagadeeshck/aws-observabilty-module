@@ -2,41 +2,53 @@
 
 Terraform modules for building an AWS observability and monitoring foundation across workload and monitoring accounts.
 
-This repository is organized around reusable modules for:
+This repository provides reusable Terraform patterns for inventory-driven monitoring, cross-account alarm pipelines, OTel/ADOT deployment patterns, and explicit tracing controls for supported AWS resources.
 
-- observability alarm generation from service inventory
-- OTel/ADOT gateway and collector patterns
-- cross-account monitoring and alerting patterns
-- native AWS X-Ray tracing enablement for explicitly selected resources
-- OTel export gating for instrumented workloads
+## What this repository includes
 
-## Repository layout
+- `modules/observability/` — inventory-based alarm generation and service-level monitoring
+- `modules/otel-gateway/` — OTel collector deployment pattern for ADOT ingestion and export
+- `modules/tracing/` — explicit tracing controls for native AWS X-Ray and workload OTel/ADOT export
+- `examples/monitoring-account/` — monitoring-account deployment patterns
+- `examples/selected-services/` — examples for selected service monitoring
+- `examples/tracing/` — tracing module usage examples
+- `docs/` — implementation guidance, limitations, and design notes
 
-- `modules/observability/` — inventory-driven observability alarm module
-- `modules/otel-gateway/` — OTel collector gateway for ADOT ingress/export patterns
-- `modules/tracing/` — separate native X-Ray and OTel control layer
-- `examples/monitoring-account/` — monitoring account example configuration
-- `examples/selected-services/` — example module usage for a subset of services
-- `examples/tracing/` — tracing module examples
-- `docs/` — design and limitations notes
+## Observability model
+
+This repository separates three concerns that are often conflated:
+
+1. Inventory and discovery
+   - Maps AWS resources and metadata into monitoring configuration
+   - Usually created from AWS Config, discovery scripts, or curated inventory input
+
+2. Alarm and monitoring definition
+   - Produces CloudWatch alarms, SNS topics, dashboards, and event-driven actions
+   - Typically applied in a monitoring account
+
+3. Tracing and telemetry export
+   - Native AWS tracing is resource-specific and must be enabled on supported services
+   - Application instrumentation (OTel/ADOT) is separate and depends on app code or the runtime integration path
 
 ## Tracing model
 
-The tracing implementation intentionally separates two patterns:
+The tracing module intentionally separates two independent patterns:
 
-1. Native AWS tracing controls
-   - `enable_xray_tracing = true`
-   - `xray_tracing_services` defines the supported services
-   - `native_xray_resources` explicitly lists resources to update
-   - Supported resources in this module today: Lambda, API Gateway REST stages, and Step Functions
+### 1) Native AWS X-Ray tracing
 
-2. OTel/ADOT workload instrumentation flow
-   - `enable_otel_export = true`
-   - `otel_export_services` defines the service keys to be consumed by workload Terraform
-   - This does not automatically enable tracing for AWS-managed resources
-   - Your application or ECS/EKS/Lambda deployment still needs SDK or ADOT layer configuration
+Use this when you want to enable native tracing on supported AWS resources.
 
-## Example: native X-Ray tracing
+- `enable_xray_tracing = true` turns on the controller path
+- `xray_tracing_services` defines which supported services are allowed
+- `native_xray_resources` contains the explicit resource list to update
+
+Currently supported native controls in this module:
+
+- Lambda functions
+- API Gateway REST API stages
+- Step Functions state machines
+
+Example:
 
 ```hcl
 module "tracing" {
@@ -67,7 +79,21 @@ module "tracing" {
 }
 ```
 
-## Example: OTel export gate
+This controller is intentionally explicit and idempotent:
+
+- It only updates allowlisted resources
+- It does not broadly enable tracing across every AWS resource
+- It does not disable tracing when the setting is turned off
+
+### 2) OTel / ADOT export path
+
+Use this when you want to configure workload-side instrumentation flow rather than a native AWS resource toggle.
+
+- `enable_otel_export = true` activates the workload export gate
+- `otel_export_services` lists the workloads or service families to be wired for OTel export
+- The module outputs the selected service keys for workload Terraform or deployment code to consume
+
+Example:
 
 ```hcl
 module "tracing" {
@@ -82,11 +108,39 @@ module "tracing" {
 }
 ```
 
-This exposes the selected service names for workload deployment configuration without pretending that all AWS resources support a universal tracing toggle.
+This is not a native AWS resource switch. It is a configuration gate for app-side instrumentation, such as:
+
+- AWS Distro for OpenTelemetry (ADOT) SDK integration
+- OTLP exporter configuration
+- ECS/EKS/EC2 application instrumentation
+- Lambda runtime-specific tracing layers or SDK setup
+
+## Important boundaries
+
+- Native AWS tracing and application instrumentation are separate features.
+- Not every AWS service exposes a universal tracing toggle.
+- Cross-account monitoring is typically set up in the monitoring account, while workload tracing remains in the workload account.
+- Use explicit allowlists and resource definitions to avoid accidental drift, broad permission scopes, and unexpected changes.
+
+## Intended use
+
+This project is designed to help teams standardize:
+
+- inventory-driven CloudWatch monitoring
+- cross-account alarm patterns
+- collector and gateway setup for telemetry export
+- explicit, auditable tracing controls for supported AWS resources
+- safe separation between monitoring configuration and application-level observability
+
+## Quick start
+
+1. Review the module examples in `examples/tracing/`.
+2. Decide whether your workload needs native X-Ray enablement or ADOT/OTel instrumentation.
+3. Populate the explicit resource list for the relevant AWS services.
+4. Keep OAM, CloudWatch alarms, and application instrumentation as separate deployment concerns.
 
 ## Notes
 
-- AWS-managed tracing toggles are resource-specific and not universal.
-- OTel/ADOT instrumentation still requires app-level configuration and collector wiring.
-- Cross-account monitoring patterns should keep alarm generation in the monitoring account and tracing configuration in the workload account.
-- Use explicit allowlists instead of broad, implicit tracing changes to reduce accidental drift and cost.
+- AWS service tracing capabilities differ by resource type and region.
+- Application tracing requires compatible SDKs, collectors, or Lambda layers
+- Validate IAM least-privilege permissions and regional prerequisites before production rollout
