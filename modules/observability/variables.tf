@@ -19,7 +19,7 @@ variable "services" {
   type        = set(string)
   default     = []
   validation {
-    condition = alltrue([for service in var.services : contains(["ec2", "rds", "ecs", "lambda", "emr", "sagemaker", "bedrock", "agentcore", "s3", "s3_tables", "athena", "glue", "datazone", "dynamodb", "opensearch", "iam", "route53"], service)])
+    condition = alltrue([for service in var.services : contains(["ec2", "rds", "ecs", "lambda", "emr", "emr_serverless", "sagemaker", "bedrock", "agentcore", "s3", "s3_tables", "athena", "glue", "datazone", "dynamodb", "opensearch", "iam", "route53"], service)])
     error_message = "services contains an unsupported service key."
   }
 }
