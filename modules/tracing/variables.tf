@@ -7,10 +7,10 @@ variable "enable_xray_tracing" {
 variable "xray_tracing_services" {
   description = "Per-service opt-in for native X-Ray tracing. Supported controller actions: lambda, apigateway_rest, stepfunctions."
   type        = map(bool)
-  default     = {
-    lambda         = false
+  default = {
+    lambda          = false
     apigateway_rest = false
-    stepfunctions  = false
+    stepfunctions   = false
   }
   validation {
     condition     = alltrue([for service in keys(var.xray_tracing_services) : contains(["lambda", "apigateway_rest", "stepfunctions"], service)])
@@ -27,6 +27,15 @@ variable "native_xray_resources" {
       stage_name  = string
       region      = string
     })), {})
+    stepfunctions = optional(map(string), {})
+  })
+  default = {}
+}
+
+variable "target_role_arns" {
+  description = "Execution/service role ARNs corresponding to opted-in Lambda and Step Functions resources. The module attaches X-Ray write permissions to these roles. Keys must match native_xray_resources keys."
+  type = object({
+    lambda       = optional(map(string), {})
     stepfunctions = optional(map(string), {})
   })
   default = {}

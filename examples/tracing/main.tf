@@ -14,6 +14,10 @@ module "tracing" {
     }
     stepfunctions = { example_workflow = "arn:aws:states:eu-west-1:111122223333:stateMachine:example" }
   }
+  target_role_arns = {
+    lambda = { example_fn = "arn:aws:iam::111122223333:role/example-function-execution" }
+    stepfunctions = { example_workflow = "arn:aws:iam::111122223333:role/example-state-machine" }
+  }
 
   enable_otel_export = true
   otel_export_services = {

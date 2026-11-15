@@ -1,6 +1,6 @@
 # Native X-Ray and OTel/ADOT tracing controls
 
-This module exposes two separate tracing paths. Use it in the **workload account** because it changes native resource settings there.
+This module exposes two separate tracing paths. Use it in the **workload account** because it changes native resource settings.
 
 ## Native AWS X-Ray
 
@@ -37,10 +37,22 @@ module "tracing" {
       ingest_workflow = "arn:aws:states:eu-west-1:111122223333:stateMachine:ingest"
     }
   }
+  target_role_arns = {
+    lambda = {
+      orders = "arn:aws:iam::111122223333:role/orders-execution"
+    }
+    stepfunctions = {
+      ingest_workflow = "arn:aws:iam::111122223333:role/ingest-state-machine"
+    }
+  }
 }
 ```
 
-The controller **only enables** tracing and never turns it off. It processes only the explicit allowlist. It does not update Terraform state for those resources; if the same resources are declared in another Terraform stack, reconcile their tracing settings there too to avoid drift. Review the scheduled function's results and logs after deployment. Update permissions and resource identifiers to your account, and validate API Gateway execution-role/X-Ray prerequisites.
+The module attaches `xray:PutTraceSegments` and `xray:PutTelemetryRecords` to the explicitly supplied Lambda execution roles and Step Functions service roles. API Gateway REST tracing also requires the API Gateway account-level CloudWatch role to be configured for X-Ray in that region.
+
+The controller **only enables** tracing and never turns it off. It processes only the explicit allowlist. It does not update Terraform state for those resources; if the same resources are declared in another Terraform stack, reconcile their tracing settings there too to avoid drift. It logs per-resource failures and fails the invocation after processing all entries so asynchronous retries and CloudWatch Lambda error alarms can detect failures. Allowlist payloads are capped at 3000 serialized bytes to leave room below Lambda's 4 KB aggregate environment-variable limit; split larger inventories across module instances.
+
+The role policies managed by this module are Terraform-managed and will be removed if the corresponding allowlist entry is removed. Review every plan and ensure these policy attachments do not conflict with policies managed by another stack.
 
 ## OTel/ADOT export
 

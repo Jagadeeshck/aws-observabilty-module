@@ -1,7 +1,11 @@
 import json
+import logging
 import os
 
 import boto3
+
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
 
 
 def _region_from_arn(arn):
@@ -61,6 +65,15 @@ def lambda_handler(event, context):
         try:
             handler = handlers[item["service"]]
             results.append(handler(item))
-        except Exception as exc:  # report failures but continue processing other allowlisted resources
-            results.append({"service": item.get("service"), "key": item.get("key"), "status": "error", "error": str(exc)[:500]})
+        except Exception as exc:
+            result = {"service": item.get("service"), "key": item.get("key"), "status": "error", "error": str(exc)[:500]}
+            logger.exception("Failed to enable X-Ray tracing for allowlisted resource %s", result)
+            results.append(result)
+
+    failures = [result for result in results if result["status"] == "error"]
+    logger.info("X-Ray reconciliation results: %s", json.dumps(results, default=str))
+    if failures:
+        # Raising makes asynchronous EventBridge/Lambda retries visible and allows
+        # CloudWatch alarms on Lambda Errors to detect a failed reconciliation.
+        raise RuntimeError(f"X-Ray tracing failed for {len(failures)} allowlisted resource(s); see preceding logs")
     return {"status": "complete", "results": results}
