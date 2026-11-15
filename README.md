@@ -1,116 +1,71 @@
 # AWS observability Terraform module
 
-Terraform modules for inventory-driven CloudWatch alarms and OAM cross-account sharing. Service-specific alarm files live under `modules/observability/services/<service>/`.
+Inventory-driven CloudWatch alarms for a monitoring account, OAM cross-account sharing, and ADOT integration guidance. Service-specific configuration lives under `modules/observability/services/<service>/`; monitoring-account examples use standalone `alert_<service>.tf` files.
 
-> **Scope and safety:** AWS has hundreds of resource types. Terraform cannot enumerate every active resource in an account by itself, and this repository does not claim universal AWS-resource coverage. This module supports the service types listed below when supplied with inventory. Feed it resource IDs and metric dimensions from AWS Config, Resource Explorer, or your own inventory pipeline. It creates only the alarm resources explicitly declared in that inventory; it does not turn off existing alarms or service monitoring settings.
+## Alert behavior
 
-## Supported service folders
+Set `enable_alerts = true` to create the module's baseline alarms plus custom alarms supplied in `resource_inventory`. Set it to `false` to create no alarms. `enabled` remains a master module switch. `scope = "all"` means all service types supported by this module; `scope = "selected"` uses `services`.
 
-`ec2`, `rds`, `ecs`, `lambda`, `emr`, `sagemaker`, `bedrock`, and `agentcore`.
+Alarms are created in the account where the observability module is applied. For cross-account alarms, apply the alarm module using monitoring-account credentials and provide each inventory resource's source `account_id` and `region`. The metric query then reads that source account's metric through configured CloudWatch cross-account observability/OAM. Alarm actions (for example SNS) should be resources/ARNs in the monitoring account.
 
-Each service inventory entry contains its CloudWatch metric dimensions and alarm specifications. This keeps metric availability and thresholds explicit and lets teams add service-specific alerts as separate `.tf` files. CloudWatch metrics are not uniform: some are emitted only after workload traffic, some require enhanced monitoring or instrumentation, and AgentCore traces/logs require the appropriate source-side setup.
+> Terraform does not discover every AWS resource automatically. The included discovery script reads resources recorded in an AWS Config aggregator. Config coverage and freshness vary; review the generated inventory and plan. This module only monitors inventory entries and metrics explicitly supported/configured.
 
-## Basic usage
+## Service coverage
 
-The inventory can be generated outside Terraform (for example, from AWS Config) and supplied as a `.tfvars` file. Use stable resource keys and alarm names.
+Folders are provided for EC2, RDS, ECS, Lambda, EMR, SageMaker, Bedrock, AgentCore, S3, S3 Tables, Athena, Glue, DataZone, DynamoDB, OpenSearch, IAM, and Route 53. Baseline alarms are configured only where a stable native CloudWatch metric and resource dimension are known. Other services accept custom alarms but intentionally do not invent non-existent metrics. S3 request metrics, some SageMaker metrics, and AgentCore telemetry may need source-side configuration/instrumentation.
+
+## Example: monitoring account
 
 ```hcl
 module "observability" {
-  source = "./modules/observability"
+  source = "../../modules/observability"
 
-  enabled = true
-  scope   = "selected" # "all" means all supported services below, not every AWS service
-  services = ["lambda", "rds", "bedrock"]
+  enabled       = true
+  enable_alerts = true
+  scope         = "selected"
+  services      = ["ec2", "rds", "lambda", "s3", "bedrock"]
 
-  resource_inventory = {
-    lambda = {
-      orders = {
-        dimensions = { FunctionName = "orders" }
-        alarms = [{
-          name                = "orders-errors"
-          namespace           = "AWS/Lambda"
-          metric_name         = "Errors"
-          statistic           = "Sum"
-          period              = 300
-          evaluation_periods  = 1
-          threshold           = 1
-          comparison_operator = "GreaterThanOrEqualToThreshold"
-          treat_missing_data  = "notBreaching"
-        }]
-      }
-    }
-    rds = {
-      warehouse = {
-        dimensions = { DBInstanceIdentifier = "warehouse" }
-        alarms = [{
-          name                = "warehouse-cpu"
-          namespace           = "AWS/RDS"
-          metric_name         = "CPUUtilization"
-          statistic           = "Average"
-          period              = 300
-          evaluation_periods  = 3
-          threshold           = 80
-          comparison_operator = "GreaterThanThreshold"
-          treat_missing_data  = "missing"
-        }]
-      }
-    }
-    bedrock = {
-      account_inference_errors = {
-        dimensions = {}
-        alarms = [{
-          name                = "bedrock-server-errors"
-          namespace           = "AWS/Bedrock"
-          metric_name         = "InvocationServerErrors"
-          statistic           = "Sum"
-          period              = 300
-          evaluation_periods  = 1
-          threshold           = 1
-          comparison_operator = "GreaterThanOrEqualToThreshold"
-          treat_missing_data  = "notBreaching"
-        }]
-      }
-    }
-  }
-
-  alarm_actions = ["arn:aws:sns:us-east-1:123456789012:platform-alerts"]
-  tags = { Environment = "prod", ManagedBy = "terraform" }
+  # Inventory comes from AWS Config or another discovery pipeline. Each entry
+  # is keyed stably and includes source-account metric dimensions.
+  resource_inventory = var.resource_inventory
+  alarm_actions      = [aws_sns_topic.alerts.arn]
+  tags               = { Environment = "prod", ManagedBy = "terraform" }
 }
 ```
 
-Alarm metric namespaces, dimensions, and thresholds must match the selected AWS service's published metrics in that region. For Bedrock, use documented `AWS/Bedrock` metrics and dimensions; model-level dimensions should only be included when the metric publishes them. SageMaker Studio resources do not all publish the same metric dimensions. AgentCore commonly relies on CloudWatch logs and OpenTelemetry traces as well as metrics; add alarms only for metrics actually emitted in your setup.
-
-## OAM cross-account sharing
-
-Create a sink in the monitoring account using `modules/oam/sink`, then create a link in each source account using `modules/oam/link`. OAM shares CloudWatch telemetry; it does not discover resources, install agents, enable optional service metrics, or configure an OTLP receiver.
+A cross-account inventory item looks like:
 
 ```hcl
-# Monitoring account
-module "oam_sink" {
-  source = "./modules/oam/sink"
-  name   = "central-observability"
-  allowed_account_ids = ["111122223333"]
-  resource_types = ["AWS::CloudWatch::Metric", "AWS::Logs::LogGroup"]
-}
-
-# Source account (pass the sink ARN from the monitoring account)
-module "oam_link" {
-  source          = "./modules/oam/link"
-  sink_identifier = "arn:aws:oam:us-east-1:444455556666:sink/example"
-  label           = "data-platform-prod"
-  resource_types  = ["AWS::CloudWatch::Metric", "AWS::Logs::LogGroup"]
+resource_inventory = {
+  ec2 = {
+    prod_instance = {
+      account_id = "111122223333"
+      region     = "us-east-1"
+      dimensions = { InstanceId = "i-0123456789abcdef0" }
+      alarms = [] # optional custom alerts, added to defaults
+    }
+  }
 }
 ```
 
-For AWS Organizations, the sink policy can authorize an organization instead of enumerating account IDs. Apply the sink policy and link from credentials/providers in the correct accounts. Configure the OTel gateway and source collectors separately; this repository does not deploy an OTel collector by default.
+See `examples/monitoring-account/alerts/alert_ec2.tf` and sibling files for explicit, standalone alarm definitions and custom alert examples. The module's built-in defaults are generated from `locals.tf`; custom alarms can be added per inventory resource without replacing the defaults.
 
-## Deploy and validate
+## OAM
+
+Use `modules/oam/sink` in the monitoring account and `modules/oam/link` in each source account. OAM shares eligible CloudWatch metrics/logs; it does not create alarms, discover resources, enable optional service metrics, or transport OTLP traces. The monitoring account must have the appropriate OAM sink/link setup and IAM permissions.
+
+## Discovery and traces
+
+See `docs/inventory-and-tracing.md` for AWS Config inventory generation, limitations, and ADOT setup guidance. ADOT traces require workload instrumentation or a supported integration plus an exporter/collector. They cannot be generically attached to arbitrary AWS resources. Lambda function-owning code can add the appropriate ADOT layer while preserving existing layers and environment variables; ECS/EKS/EC2 workloads need an instrumented app and a secured collector endpoint.
+
+## Validate
 
 ```sh
-terraform -chdir=examples/selected-services init
-terraform -chdir=examples/selected-services validate
-terraform -chdir=examples/selected-services plan
-terraform -chdir=examples/selected-services apply
+python -m pip install -r scripts/requirements.txt
+python scripts/discover_inventory.py --aggregator-name org-inventory --regions us-east-1 --services ec2,rds,lambda --output examples/monitoring-account/inventory.auto.tfvars.json
+terraform -chdir=examples/monitoring-account init
+terraform -chdir=examples/monitoring-account validate
+terraform -chdir=examples/monitoring-account plan
 ```
 
-Review plans carefully: removing an inventory resource or alarm specification removes Terraform-managed alarms. Existing alarms not managed by this module are left untouched. Advanced monitoring/instrumentation can incur AWS charges and may require source-account permissions and configuration.
+Review every plan before applying. Removing an inventory entry or alarm specification can destroy Terraform-managed alarms; unrelated alarms are not imported, modified, or disabled. Enhanced metrics and instrumentation can incur AWS charges.
