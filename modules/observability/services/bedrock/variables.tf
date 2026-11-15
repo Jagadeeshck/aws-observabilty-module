@@ -1,5 +1,5 @@
 variable "resource_inventory" {
-  description = "Map of resource keys to {dimensions = map(string), alarms = list(object)}. Alarm fields: name, namespace, metric_name, statistic, period, evaluation_periods, threshold, comparison_operator; optional dimensions and treat_missing_data."
+  description = "Resource keys mapped to dimensions and optional alarm specs. Metrics must be valid for the resource and region."
   type        = any
   default     = {}
 }
