@@ -1,18 +1,40 @@
 locals {
-  supported_services = ["ec2", "rds", "ecs", "lambda", "emr", "sagemaker", "bedrock", "agentcore", "s3", "s3_tables", "athena", "glue", "datazone", "dynamodb", "opensearch", "iam", "route53"]
+  supported_services = ["ec2", "rds", "ecs", "lambda", "emr", "emr_serverless", "sagemaker", "bedrock", "agentcore", "s3", "s3_tables", "athena", "glue", "datazone", "dynamodb", "opensearch", "iam", "route53"]
   selected_services  = var.enabled ? (var.scope == "all" ? local.supported_services : sort(tolist(var.services))) : []
   alerts_enabled     = var.enabled && var.enable_alerts
 
-  # Safe defaults only for documented, resource-dimensioned native metrics.
-  # Resources/services without a universal metric accept custom alarm specs.
   default_alarm_templates = {
-    ec2 = [{ suffix="status-check-failed", namespace="AWS/EC2", metric_name="StatusCheckFailed", statistic="Maximum", period=300, evaluation_periods=2, threshold=0, comparison_operator="GreaterThanThreshold", treat_missing_data="notBreaching" }]
-    rds = [{ suffix="cpu-high", namespace="AWS/RDS", metric_name="CPUUtilization", statistic="Average", period=300, evaluation_periods=3, threshold=80, comparison_operator="GreaterThanThreshold", treat_missing_data="missing" }]
-    lambda = [{ suffix="errors", namespace="AWS/Lambda", metric_name="Errors", statistic="Sum", period=300, evaluation_periods=1, threshold=1, comparison_operator="GreaterThanOrEqualToThreshold", treat_missing_data="notBreaching" }]
-    dynamodb = [{ suffix="system-errors", namespace="AWS/DynamoDB", metric_name="SystemErrors", statistic="Sum", period=300, evaluation_periods=1, threshold=1, comparison_operator="GreaterThanOrEqualToThreshold", treat_missing_data="notBreaching" }]
-    sagemaker = [{ suffix="invocation-5xx", namespace="AWS/SageMaker", metric_name="Invocation5XXErrors", statistic="Sum", period=300, evaluation_periods=1, threshold=1, comparison_operator="GreaterThanOrEqualToThreshold", treat_missing_data="notBreaching" }]
-    bedrock = [{ suffix="server-errors", namespace="AWS/Bedrock", metric_name="InvocationServerErrors", statistic="Sum", period=300, evaluation_periods=1, threshold=1, comparison_operator="GreaterThanOrEqualToThreshold", treat_missing_data="notBreaching" }]
-    route53 = [{ suffix="health-check-unhealthy", namespace="AWS/Route53", metric_name="HealthCheckStatus", statistic="Minimum", period=60, evaluation_periods=3, threshold=1, comparison_operator="LessThanThreshold", treat_missing_data="breaching" }]
+    ec2        = [{ suffix = "status-check-failed", namespace = "AWS/EC2", metric_name = "StatusCheckFailed", statistic = "Maximum", period = 300, evaluation_periods = 2, threshold = 0, comparison_operator = "GreaterThanThreshold", treat_missing_data = "missing" }]
+    rds        = [{ suffix = "cpu-high", namespace = "AWS/RDS", metric_name = "CPUUtilization", statistic = "Average", period = 300, evaluation_periods = 3, threshold = 80, comparison_operator = "GreaterThanThreshold", treat_missing_data = "missing" }]
+    lambda     = [{ suffix = "errors", namespace = "AWS/Lambda", metric_name = "Errors", statistic = "Sum", period = 300, evaluation_periods = 1, threshold = 1, comparison_operator = "GreaterThanOrEqualToThreshold", treat_missing_data = "missing" }]
+    dynamodb   = [{ suffix = "system-errors", namespace = "AWS/DynamoDB", metric_name = "SystemErrors", statistic = "Sum", period = 300, evaluation_periods = 1, threshold = 1, comparison_operator = "GreaterThanOrEqualToThreshold", treat_missing_data = "missing" }]
+    sagemaker  = [{ suffix = "invocation-5xx", namespace = "AWS/SageMaker", metric_name = "Invocation5XXErrors", statistic = "Sum", period = 300, evaluation_periods = 1, threshold = 1, comparison_operator = "GreaterThanOrEqualToThreshold", treat_missing_data = "missing" }]
+    bedrock    = [{ suffix = "server-errors", namespace = "AWS/Bedrock", metric_name = "InvocationServerErrors", statistic = "Sum", period = 300, evaluation_periods = 1, threshold = 1, comparison_operator = "GreaterThanOrEqualToThreshold", treat_missing_data = "missing" }]
+    route53    = [{ suffix = "health-check-unhealthy", namespace = "AWS/Route53", metric_name = "HealthCheckStatus", statistic = "Minimum", period = 60, evaluation_periods = 3, threshold = 1, comparison_operator = "LessThanThreshold", treat_missing_data = "notBreaching" }]
+    emr_serverless = [
+      {
+        suffix = "cpu-high"
+        namespace = "AWS/EMRServerless"
+        metric_name = "WorkerCpuUsed"
+        statistic = "Maximum"
+        period = 300
+        evaluation_periods = 3
+        threshold = 80
+        comparison_operator = "GreaterThanThreshold"
+        treat_missing_data = "missing"
+      },
+      {
+        suffix = "memory-high"
+        namespace = "AWS/EMRServerless"
+        metric_name = "WorkerMemoryUsed"
+        statistic = "Maximum"
+        period = 300
+        evaluation_periods = 3
+        threshold = 80
+        comparison_operator = "GreaterThanThreshold"
+        treat_missing_data = "missing"
+      }
+    ]
   }
 
   raw_inventory = { for service in local.supported_services : service => try(var.resource_inventory[service], {}) }
